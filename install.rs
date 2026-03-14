@@ -2,7 +2,7 @@
 //! Install the Seele Rust toolchain from the local rust-seele checkout.
 //!
 //! Usage:
-//!   ./install.rs [--target <triple>] [--toolchain <name>] [--std] [--skip-build]
+//!   ./install.rs [--target <triple>] [--toolchain <name>] [--std] [--skip-build] [--force]
 //!
 //! Defaults:
 //!   target:     x86_64-seele
@@ -23,6 +23,7 @@ fn main() {
     let mut toolchain = "seele".to_string();
     let mut build_std = false;
     let mut skip_build = false;
+    let mut force = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -34,6 +35,7 @@ fn main() {
             }
             "--std" => build_std = true,
             "--skip-build" => skip_build = true,
+            "--force" => force = true,
             "--help" | "-h" => {
                 usage("");
             }
@@ -51,6 +53,11 @@ fn main() {
             rust_dir.display()
         );
         std::process::exit(1);
+    }
+
+    if !force && toolchain_exists(&toolchain).unwrap_or(false) {
+        println!("toolchain '{toolchain}' already installed; skipping (use --force to rebuild)");
+        return;
     }
 
     if !skip_build {
@@ -128,4 +135,16 @@ fn rust_host_triple() -> Result<String, String> {
         }
     }
     Err("unable to parse rustc host triple".into())
+}
+
+fn toolchain_exists(name: &str) -> Result<bool, String> {
+    let out = Command::new("rustup")
+        .args(["toolchain", "list"])
+        .output()
+        .map_err(|err| format!("failed to run rustup: {err}"))?;
+    if !out.status.success() {
+        return Err(format!("rustup toolchain list failed with status {}", out.status));
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    Ok(stdout.lines().any(|line| line.starts_with(name)))
 }
