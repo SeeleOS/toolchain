@@ -14,6 +14,7 @@
 //! - Requires rustup and a Rust host toolchain.
 
 use std::env;
+use std::fs;
 use std::path::Path;
 use std::process::{Command, ExitStatus};
 
@@ -91,6 +92,14 @@ fn main() {
         ));
     }
 
+    // For the default Seele target, make the toolchain self-contained by
+    // copying the relibc CRT objects and libc into the target's rustlib dir.
+    if target == "x86_64-seele" {
+        if let Err(err) = install_seele_runtime(&cwd, &stage_dir, &target) {
+            die(&format!("failed to install Seele runtime: {err}"));
+        }
+    }
+
     run_cmd(&cwd, "rustup", &["toolchain", "link", &toolchain, stage_dir.to_str().unwrap()])
         .unwrap_or_else(|err| die(&format!("rustup toolchain link failed: {err}")));
 
@@ -113,6 +122,61 @@ fn usage(msg: &str) -> ! {
 fn die(msg: &str) -> ! {
     eprintln!("error: {msg}");
     std::process::exit(1);
+}
+
+fn install_seele_runtime(workdir: &Path, stage_dir: &Path, target: &str) -> Result<(), String> {
+    // `workdir` is the toolchain/ directory; the workspace root is its parent.
+    let root = workdir
+        .parent()
+        .ok_or_else(|| "cannot determine workspace root (toolchain has no parent)".to_string())?;
+
+    let relibc_dir = root
+        .join("relibc-seele")
+        .join("target")
+        .join(target)
+        .join("release");
+    if !relibc_dir.is_dir() {
+        return Err(format!(
+            "relibc runtime dir not found: {} (build relibc-seele for {target} first)",
+            relibc_dir.display()
+        ));
+    }
+
+    let dst = stage_dir.join("lib").join("rustlib").join(target).join("lib");
+    if !dst.is_dir() {
+        return Err(format!(
+            "target rustlib dir not found: {} (did x.py build library/std for {target}?)",
+            dst.display()
+        ));
+    }
+
+    fs::create_dir_all(&dst)
+        .map_err(|e| format!("failed to create {}: {e}", dst.display()))?;
+
+    // CRT entry/termination objects plus the C libraries that Rust expects
+    // to link against by default (-lc, -lm, -lrt, -lpthread).
+    let needed = ["crt0.o", "crti.o", "crtn.o", "libc.a", "libm.a", "librt.a", "libpthread.a"];
+
+    for name in needed {
+        let src = relibc_dir.join(name);
+        if !src.is_file() {
+            return Err(format!(
+                "missing {} in {} (relibc-seele not fully built for {target})",
+                name,
+                relibc_dir.display()
+            ));
+        }
+        let dst_file = dst.join(name);
+        fs::copy(&src, &dst_file).map_err(|e| {
+            format!("failed to copy {} -> {}: {e}", src.display(), dst_file.display())
+        })?;
+    }
+
+    println!(
+        "installed Seele runtime (CRT + libc) into {}",
+        dst.display()
+    );
+    Ok(())
 }
 
 fn run_cmd<I, S>(dir: &Path, program: &str, args: I) -> Result<ExitStatus, String>
