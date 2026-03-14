@@ -1,0 +1,3 @@
+[submodule "rust-seele"]
+	path = rust-seele
+	url = https://github.com/SeeleOS/rust-seele
