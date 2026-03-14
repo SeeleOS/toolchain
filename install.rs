@@ -2,12 +2,12 @@
 //! Install the Seele Rust toolchain from the local rust-seele checkout.
 //!
 //! Usage:
-//!   ./install.rs [--target <triple>] [--toolchain <name>] [--std] [--skip-build] [--force] [--stage2]
+//!   ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--force] [--no-stage2]
 //!
 //! Defaults:
 //!   target:     x86_64-seele
 //!   toolchain:  seele
-//!   build:      compiler/rustc + library/core
+//!   build:      compiler/rustc + library/core + library/std (stage2)
 //!
 //! Notes:
 //! - Run this from the toolchain directory (where rust-seele/ exists).
@@ -21,10 +21,10 @@ fn main() {
     let mut args = env::args().skip(1);
     let mut target = "x86_64-seele".to_string();
     let mut toolchain = "seele".to_string();
-    let mut build_std = false;
+    let mut build_std = true;
     let mut skip_build = false;
     let mut force = false;
-    let mut stage2 = false;
+    let mut stage2 = true;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -35,9 +35,11 @@ fn main() {
                 toolchain = args.next().unwrap_or_else(|| usage("--toolchain requires a value"));
             }
             "--std" => build_std = true,
+            "--no-std" => build_std = false,
             "--skip-build" => skip_build = true,
             "--force" => force = true,
             "--stage2" => stage2 = true,
+            "--no-stage2" => stage2 = false,
             "--help" | "-h" => {
                 usage("");
             }
@@ -99,7 +101,7 @@ fn usage(msg: &str) -> ! {
         eprintln!("error: {msg}");
     }
     eprintln!(
-        "usage: ./install.rs [--target <triple>] [--toolchain <name>] [--std] [--skip-build]"
+        "usage: ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--no-stage2]"
     );
     std::process::exit(2);
 }
