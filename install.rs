@@ -66,6 +66,10 @@ fn main() {
 
     if !skip_build {
         let mut build_args = vec!["build", "--target", &target, "compiler/rustc", "library/core"];
+        if target == "x86_64-seele" {
+            build_args.insert(1, "--warnings");
+            build_args.insert(2, "warn");
+        }
         if build_std {
             build_args.push("library/std");
         }
