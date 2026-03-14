@@ -2,7 +2,7 @@
 //! Install the Seele Rust toolchain from the local rust-seele checkout.
 //!
 //! Usage:
-//!   ./install.rs [--target <triple>] [--toolchain <name>] [--std] [--skip-build] [--force]
+//!   ./install.rs [--target <triple>] [--toolchain <name>] [--std] [--skip-build] [--force] [--stage2]
 //!
 //! Defaults:
 //!   target:     x86_64-seele
@@ -24,6 +24,7 @@ fn main() {
     let mut build_std = false;
     let mut skip_build = false;
     let mut force = false;
+    let mut stage2 = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -36,6 +37,7 @@ fn main() {
             "--std" => build_std = true,
             "--skip-build" => skip_build = true,
             "--force" => force = true,
+            "--stage2" => stage2 = true,
             "--help" | "-h" => {
                 usage("");
             }
@@ -65,26 +67,30 @@ fn main() {
         if build_std {
             build_args.push("library/std");
         }
+        if stage2 {
+            build_args.insert(1, "--stage");
+            build_args.insert(2, "2");
+        }
 
         run_cmd(&rust_dir, "./x.py", &build_args)
             .unwrap_or_else(|err| die(&format!("x.py build failed: {err}")));
     }
 
     let host = rust_host_triple().unwrap_or_else(|err| die(&format!("failed to get host: {err}")));
-    let stage2 = rust_dir.join("build").join(&host).join("stage2");
-    if !stage2.is_dir() {
+    let stage_dir = rust_dir.join("build").join(&host).join(if stage2 { "stage2" } else { "stage1" });
+    if !stage_dir.is_dir() {
         die(&format!(
-            "stage2 directory not found: {}",
-            stage2.display()
+            "stage directory not found: {} (try --stage2)",
+            stage_dir.display()
         ));
     }
 
-    run_cmd(&cwd, "rustup", &["toolchain", "link", &toolchain, stage2.to_str().unwrap()])
+    run_cmd(&cwd, "rustup", &["toolchain", "link", &toolchain, stage_dir.to_str().unwrap()])
         .unwrap_or_else(|err| die(&format!("rustup toolchain link failed: {err}")));
 
     println!(
         "installed toolchain '{toolchain}' from {}",
-        stage2.display()
+        stage_dir.display()
     );
 }
 
