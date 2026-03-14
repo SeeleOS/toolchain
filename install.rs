@@ -14,8 +14,7 @@
 //! - Requires rustup and a Rust host toolchain.
 
 use std::env;
-use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, ExitStatus};
 
 fn main() {
@@ -100,7 +99,7 @@ fn die(msg: &str) -> ! {
 fn run_cmd<I, S>(dir: &Path, program: &str, args: I) -> Result<ExitStatus, String>
 where
     I: IntoIterator<Item = S>,
-    S: Into<OsString>,
+    S: AsRef<std::ffi::OsStr>,
 {
     let status = Command::new(program)
         .current_dir(dir)
