@@ -66,21 +66,34 @@ fn main() {
     }
 
     if !skip_build {
-        let mut build_args = vec!["build", "--target", &target, "compiler/rustc", "library/core"];
-        if target == "x86_64-seele" {
-            build_args.insert(1, "--warnings");
-            build_args.insert(2, "warn");
-        }
+        // 1) Build host compiler + host std (for build scripts / proc-macros).
+        let mut host_args = vec!["build", "compiler/rustc"];
         if build_std {
-            build_args.push("library/std");
+            host_args.push("library/std");
         }
         if stage2 {
-            build_args.insert(1, "--stage");
-            build_args.insert(2, "2");
+            host_args.insert(1, "--stage");
+            host_args.insert(2, "2");
+        }
+        run_cmd(&rust_dir, "./x.py", &host_args)
+            .unwrap_or_else(|err| die(&format!("x.py build (host) failed: {err}")));
+
+        // 2) Build target std/core for the Seele target.
+        let mut target_args = vec!["build", "--target", &target, "library/core"];
+        if target == "x86_64-seele" {
+            target_args.insert(1, "--warnings");
+            target_args.insert(2, "warn");
+        }
+        if build_std {
+            target_args.push("library/std");
+        }
+        if stage2 {
+            target_args.insert(1, "--stage");
+            target_args.insert(2, "2");
         }
 
-        run_cmd(&rust_dir, "./x.py", &build_args)
-            .unwrap_or_else(|err| die(&format!("x.py build failed: {err}")));
+        run_cmd(&rust_dir, "./x.py", &target_args)
+            .unwrap_or_else(|err| die(&format!("x.py build (target {target}) failed: {err}")));
     }
 
     let host = rust_host_triple().unwrap_or_else(|err| die(&format!("failed to get host: {err}")));
