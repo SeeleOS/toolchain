@@ -68,15 +68,22 @@ fn main() {
     if !skip_build {
         // 1) Build host compiler + host std (for build scripts / proc-macros).
         let mut host_args = vec!["build", "compiler/rustc"];
-        if build_std {
-            host_args.push("library/std");
-        }
         if stage2 {
             host_args.insert(1, "--stage");
             host_args.insert(2, "2");
         }
         run_cmd(&rust_dir, "./x.py", &host_args)
             .unwrap_or_else(|err| die(&format!("x.py build (host) failed: {err}")));
+
+        // Ensure the host standard library is available in the stage sysroot that we are
+        // going to link via `rustup toolchain link`. This is needed so that build scripts
+        // and proc-macros for host crates (e.g. when building relibc) can find `std` and
+        // `core` for `x86_64-unknown-linux-gnu`.
+        if build_std {
+            let mut host_std_args = vec!["build", "--stage", if stage2 { "2" } else { "1" }, "library/std"];
+            run_cmd(&rust_dir, "./x.py", &host_std_args)
+                .unwrap_or_else(|err| die(&format!("x.py build (host std) failed: {err}")));
+        }
 
         // 2) Build target std/core for the Seele target.
         let mut target_args = vec!["build", "--target", &target, "library/core"];
