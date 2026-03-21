@@ -97,6 +97,9 @@ fn install_llvm() {
     )
     .unwrap_or_else(|err| die(&format!("failed to build/install LLVM: {err}")));
 
+    install_llvm_sysroot_link(&prefix, &sysroot)
+        .unwrap_or_else(|err| die(&format!("failed to link LLVM sysroot: {err}")));
+
     println!("installed LLVM toolchain into {}", prefix.display());
 }
 
@@ -241,6 +244,43 @@ fn usage(msg: &str) -> ! {
 fn die(msg: &str) -> ! {
     eprintln!("error: {msg}");
     std::process::exit(1);
+}
+
+fn install_llvm_sysroot_link(prefix: &Path, sysroot: &Path) -> Result<(), String> {
+    let link_path = prefix.join("sysroot");
+
+    if link_path.exists() || link_path.symlink_metadata().is_ok() {
+        let meta = link_path
+            .symlink_metadata()
+            .map_err(|e| format!("failed to inspect {}: {e}", link_path.display()))?;
+        if meta.file_type().is_symlink() {
+            fs::remove_file(&link_path)
+                .map_err(|e| format!("failed to remove {}: {e}", link_path.display()))?;
+        } else {
+            return Err(format!(
+                "{} exists and is not a symlink",
+                link_path.display()
+            ));
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(sysroot, &link_path).map_err(|e| {
+            format!(
+                "failed to create symlink {} -> {}: {e}",
+                link_path.display(),
+                sysroot.display()
+            )
+        })?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        return Err("creating the LLVM sysroot symlink is only implemented on unix".to_string());
+    }
+
+    Ok(())
 }
 
 fn install_seele_runtime(workdir: &Path, stage_dir: &Path, target: &str) -> Result<(), String> {
