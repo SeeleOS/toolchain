@@ -1,3 +1,6 @@
 [submodule "rust-seele"]
 	path = rust-seele
 	url = https://github.com/SeeleOS/rust-seele
+[submodule "llvm-project"]
+	path = llvm-project
+	url = ./llvm-project
