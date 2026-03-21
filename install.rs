@@ -19,7 +19,85 @@ use std::path::Path;
 use std::process::{Command, ExitStatus};
 
 fn main() {
+    install_llvm();
     install_rust();
+}
+
+fn install_llvm() {
+    let cwd = env::current_dir().expect("failed to read current dir");
+    let llvm_dir = cwd.join("llvm-project");
+    if !llvm_dir.is_dir() {
+        die(&format!(
+            "llvm-project not found; run this from the toolchain dir (missing {})",
+            llvm_dir.display()
+        ));
+    }
+
+    let root = cwd
+        .parent()
+        .unwrap_or_else(|| die("cannot determine workspace root (toolchain has no parent)"));
+    let prefix = root.join(".llvm");
+    let sysroot = root.join("sysroot");
+    let build_dir = llvm_dir.join("build-seele");
+
+    fs::create_dir_all(&prefix)
+        .unwrap_or_else(|err| die(&format!("failed to create {}: {err}", prefix.display())));
+
+    let mut cmake_args: Vec<String> = vec![
+        "-S".into(),
+        "llvm".into(),
+        "-B".into(),
+        build_dir
+            .file_name()
+            .unwrap_or_else(|| die("invalid LLVM build directory"))
+            .to_string_lossy()
+            .into_owned(),
+        "-G".into(),
+        "Ninja".into(),
+        "-UBUILTINS_x86_64-unknown-seele_CMAKE_C_FLAGS".into(),
+        "-UBUILTINS_x86_64-unknown-seele_CMAKE_ASM_FLAGS".into(),
+        "-DCMAKE_BUILD_TYPE=Release".into(),
+        "-DLLVM_ENABLE_PROJECTS=clang;lld".into(),
+        "-DLLVM_ENABLE_RUNTIMES=compiler-rt".into(),
+        "-DLLVM_TARGETS_TO_BUILD=X86".into(),
+        "-DLLVM_BUILTIN_TARGETS=x86_64-unknown-seele".into(),
+        "-DBUILTINS_x86_64-unknown-seele_CMAKE_SYSTEM_NAME=Seele".into(),
+        format!(
+            "-DBUILTINS_x86_64-unknown-seele_CMAKE_SYSROOT={}",
+            sysroot.display()
+        ),
+        "-DBUILTINS_x86_64-unknown-seele_CMAKE_C_COMPILER_TARGET=x86_64-unknown-seele".into(),
+        "-DBUILTINS_x86_64-unknown-seele_CMAKE_ASM_COMPILER_TARGET=x86_64-unknown-seele".into(),
+        format!(
+            "-DBUILTINS_x86_64-unknown-seele_CMAKE_C_FLAGS=--sysroot={}",
+            sysroot.display()
+        ),
+        format!(
+            "-DBUILTINS_x86_64-unknown-seele_CMAKE_ASM_FLAGS=--sysroot={}",
+            sysroot.display()
+        ),
+        "-DBUILTINS_x86_64-unknown-seele_COMPILER_RT_BUILD_CRT=OFF".into(),
+        format!("-DCMAKE_INSTALL_PREFIX={}", prefix.display()),
+    ];
+    run_cmd_owned(&llvm_dir, "cmake", cmake_args.drain(..))
+        .unwrap_or_else(|err| die(&format!("failed to configure LLVM: {err}")));
+
+    run_cmd(
+        &llvm_dir,
+        "ninja",
+        &[
+            "-C",
+            build_dir
+                .file_name()
+                .unwrap_or_else(|| die("invalid LLVM build directory"))
+                .to_str()
+                .unwrap_or_else(|| die("invalid LLVM build directory")),
+            "install",
+        ],
+    )
+    .unwrap_or_else(|err| die(&format!("failed to build/install LLVM: {err}")));
+
+    println!("installed LLVM toolchain into {}", prefix.display());
 }
 
 fn install_rust() {
@@ -239,6 +317,22 @@ fn run_cmd<I, S>(dir: &Path, program: &str, args: I) -> Result<ExitStatus, Strin
 where
     I: IntoIterator<Item = S>,
     S: AsRef<std::ffi::OsStr>,
+{
+    let status = Command::new(program)
+        .current_dir(dir)
+        .args(args)
+        .status()
+        .map_err(|err| format!("failed to run {program}: {err}"))?;
+    if status.success() {
+        Ok(status)
+    } else {
+        Err(format!("{program} exited with status {status}"))
+    }
+}
+
+fn run_cmd_owned<I>(dir: &Path, program: &str, args: I) -> Result<ExitStatus, String>
+where
+    I: IntoIterator<Item = String>,
 {
     let status = Command::new(program)
         .current_dir(dir)
