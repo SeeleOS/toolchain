@@ -19,6 +19,10 @@ use std::path::Path;
 use std::process::{Command, ExitStatus};
 
 fn main() {
+    install_rust();
+}
+
+fn install_rust() {
     let mut args = env::args().skip(1);
     let mut target = "x86_64-seele".to_string();
     let mut toolchain = "seele".to_string();
@@ -30,10 +34,14 @@ fn main() {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--target" => {
-                target = args.next().unwrap_or_else(|| usage("--target requires a value"));
+                target = args
+                    .next()
+                    .unwrap_or_else(|| usage("--target requires a value"));
             }
             "--toolchain" => {
-                toolchain = args.next().unwrap_or_else(|| usage("--toolchain requires a value"));
+                toolchain = args
+                    .next()
+                    .unwrap_or_else(|| usage("--toolchain requires a value"));
             }
             "--std" => build_std = true,
             "--no-std" => build_std = false,
@@ -80,7 +88,12 @@ fn main() {
         // and proc-macros for host crates (e.g. when building relibc) can find `std` and
         // `core` for `x86_64-unknown-linux-gnu`.
         if build_std {
-            let mut host_std_args = vec!["build", "--stage", if stage2 { "2" } else { "1" }, "library/std"];
+            let mut host_std_args = vec![
+                "build",
+                "--stage",
+                if stage2 { "2" } else { "1" },
+                "library/std",
+            ];
             run_cmd(&rust_dir, "./x.py", &host_std_args)
                 .unwrap_or_else(|err| die(&format!("x.py build (host std) failed: {err}")));
         }
@@ -104,7 +117,11 @@ fn main() {
     }
 
     let host = rust_host_triple().unwrap_or_else(|err| die(&format!("failed to get host: {err}")));
-    let stage_dir = rust_dir.join("build").join(&host).join(if stage2 { "stage2" } else { "stage1" });
+    let stage_dir =
+        rust_dir
+            .join("build")
+            .join(&host)
+            .join(if stage2 { "stage2" } else { "stage1" });
     if !stage_dir.is_dir() {
         die(&format!(
             "stage directory not found: {} (try --stage2)",
@@ -120,8 +137,12 @@ fn main() {
         }
     }
 
-    run_cmd(&cwd, "rustup", &["toolchain", "link", &toolchain, stage_dir.to_str().unwrap()])
-        .unwrap_or_else(|err| die(&format!("rustup toolchain link failed: {err}")));
+    run_cmd(
+        &cwd,
+        "rustup",
+        &["toolchain", "link", &toolchain, stage_dir.to_str().unwrap()],
+    )
+    .unwrap_or_else(|err| die(&format!("rustup toolchain link failed: {err}")));
 
     println!(
         "installed toolchain '{toolchain}' from {}",
@@ -162,7 +183,11 @@ fn install_seele_runtime(workdir: &Path, stage_dir: &Path, target: &str) -> Resu
         ));
     }
 
-    let dst = stage_dir.join("lib").join("rustlib").join(target).join("lib");
+    let dst = stage_dir
+        .join("lib")
+        .join("rustlib")
+        .join(target)
+        .join("lib");
     if !dst.is_dir() {
         return Err(format!(
             "target rustlib dir not found: {} (did x.py build library/std for {target}?)",
@@ -170,12 +195,19 @@ fn install_seele_runtime(workdir: &Path, stage_dir: &Path, target: &str) -> Resu
         ));
     }
 
-    fs::create_dir_all(&dst)
-        .map_err(|e| format!("failed to create {}: {e}", dst.display()))?;
+    fs::create_dir_all(&dst).map_err(|e| format!("failed to create {}: {e}", dst.display()))?;
 
     // CRT entry/termination objects plus the C libraries that Rust expects
     // to link against by default (-lc, -lm, -lrt, -lpthread).
-    let needed = ["crt0.o", "crti.o", "crtn.o", "libc.a", "libm.a", "librt.a", "libpthread.a"];
+    let needed = [
+        "crt0.o",
+        "crti.o",
+        "crtn.o",
+        "libc.a",
+        "libm.a",
+        "librt.a",
+        "libpthread.a",
+    ];
 
     for name in needed {
         let src = relibc_dir.join(name);
@@ -188,7 +220,11 @@ fn install_seele_runtime(workdir: &Path, stage_dir: &Path, target: &str) -> Resu
         }
         let dst_file = dst.join(name);
         fs::copy(&src, &dst_file).map_err(|e| {
-            format!("failed to copy {} -> {}: {e}", src.display(), dst_file.display())
+            format!(
+                "failed to copy {} -> {}: {e}",
+                src.display(),
+                dst_file.display()
+            )
         })?;
     }
 
@@ -239,7 +275,10 @@ fn toolchain_exists(name: &str) -> Result<bool, String> {
         .output()
         .map_err(|err| format!("failed to run rustup: {err}"))?;
     if !out.status.success() {
-        return Err(format!("rustup toolchain list failed with status {}", out.status));
+        return Err(format!(
+            "rustup toolchain list failed with status {}",
+            out.status
+        ));
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
     Ok(stdout.lines().any(|line| line.starts_with(name)))
