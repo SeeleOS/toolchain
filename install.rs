@@ -82,17 +82,23 @@ fn install_llvm() {
     run_cmd_owned(&llvm_dir, "cmake", cmake_args.drain(..))
         .unwrap_or_else(|err| die(&format!("failed to configure LLVM: {err}")));
 
-    run_cmd(
+    let jobs = std::thread::available_parallelism()
+        .map(|n| n.get().to_string())
+        .unwrap_or_else(|_| "1".to_string());
+
+    run_cmd_owned(
         &llvm_dir,
         "ninja",
-        &[
-            "-C",
+        vec![
+            "-C".into(),
             build_dir
                 .file_name()
                 .unwrap_or_else(|| die("invalid LLVM build directory"))
-                .to_str()
-                .unwrap_or_else(|| die("invalid LLVM build directory")),
-            "install",
+                .to_string_lossy()
+                .into_owned(),
+            "-j".into(),
+            jobs,
+            "install".into(),
         ],
     )
     .unwrap_or_else(|err| die(&format!("failed to build/install LLVM: {err}")));
@@ -169,7 +175,7 @@ fn install_rust() {
         // and proc-macros for host crates (e.g. when building relibc) can find `std` and
         // `core` for `x86_64-unknown-linux-gnu`.
         if build_std {
-            let mut host_std_args = vec![
+            let host_std_args = vec![
                 "build",
                 "--stage",
                 if stage2 { "2" } else { "1" },
