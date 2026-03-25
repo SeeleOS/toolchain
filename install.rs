@@ -162,10 +162,10 @@ fn install_rust() {
 
     if !skip_build {
         // 1) Build host compiler + host std (for build scripts / proc-macros).
-        let mut host_args = vec!["build", "compiler/rustc"];
+        let mut host_args = vec!["build", "--warnings", "warn", "compiler/rustc"];
         if stage2 {
-            host_args.insert(1, "--stage");
-            host_args.insert(2, "2");
+            host_args.insert(3, "--stage");
+            host_args.insert(4, "2");
         }
         run_cmd(&rust_dir, "./x.py", &host_args)
             .unwrap_or_else(|err| die(&format!("x.py build (host) failed: {err}")));
@@ -177,6 +177,8 @@ fn install_rust() {
         if build_std {
             let host_std_args = vec![
                 "build",
+                "--warnings",
+                "warn",
                 "--stage",
                 if stage2 { "2" } else { "1" },
                 "library/std",
