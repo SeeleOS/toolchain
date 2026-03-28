@@ -2,7 +2,7 @@
 //! Install the Seele Rust toolchain from the local rust-seele checkout.
 //!
 //! Usage:
-//!   ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--force] [--no-stage2]
+//!   ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--force] [--no-stage2] [--llvm-cxx]
 //!
 //! Defaults:
 //!   target:     x86_64-seele
@@ -19,11 +19,70 @@ use std::path::Path;
 use std::process::{Command, ExitStatus};
 
 fn main() {
-    install_llvm();
-    install_rust();
+    let config = Config::parse();
+    install_llvm(&config);
+    install_rust(&config);
 }
 
-fn install_llvm() {
+struct Config {
+    target: String,
+    toolchain: String,
+    build_std: bool,
+    skip_build: bool,
+    force: bool,
+    stage2: bool,
+    llvm_cxx: bool,
+}
+
+impl Config {
+    fn parse() -> Self {
+        let mut args = env::args().skip(1);
+        let mut config = Self {
+            target: "x86_64-seele".to_string(),
+            toolchain: "seele".to_string(),
+            build_std: true,
+            skip_build: false,
+            force: false,
+            stage2: true,
+            llvm_cxx: false,
+        };
+
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--target" => {
+                    config.target = args
+                        .next()
+                        .unwrap_or_else(|| usage("--target requires a value"));
+                }
+                "--toolchain" => {
+                    config.toolchain = args
+                        .next()
+                        .unwrap_or_else(|| usage("--toolchain requires a value"));
+                }
+                "--std" => config.build_std = true,
+                "--no-std" => config.build_std = false,
+                "--skip-build" => config.skip_build = true,
+                "--force" => config.force = true,
+                "--stage2" => config.stage2 = true,
+                "--no-stage2" => config.stage2 = false,
+                "--llvm-cxx" => config.llvm_cxx = true,
+                "--help" | "-h" => usage(""),
+                other => usage(&format!("unknown argument: {other}")),
+            }
+        }
+
+        config
+    }
+
+    fn llvm_target(&self) -> String {
+        match self.target.as_str() {
+            "x86_64-seele" => "x86_64-unknown-seele".to_string(),
+            other => other.to_string(),
+        }
+    }
+}
+
+fn install_llvm(config: &Config) {
     let cwd = env::current_dir().expect("failed to read current dir");
     let llvm_dir = cwd.join("llvm-project");
     if !llvm_dir.is_dir() {
@@ -39,9 +98,19 @@ fn install_llvm() {
     let prefix = root.join(".llvm");
     let sysroot = root.join("sysroot");
     let build_dir = llvm_dir.join("build-seele");
+    let llvm_target = config.llvm_target();
 
     fs::create_dir_all(&prefix)
         .unwrap_or_else(|err| die(&format!("failed to create {}: {err}", prefix.display())));
+
+    let mut llvm_runtimes = vec!["compiler-rt".to_string()];
+    if config.llvm_cxx {
+        llvm_runtimes.extend([
+            "libunwind".to_string(),
+            "libcxxabi".to_string(),
+            "libcxx".to_string(),
+        ]);
+    }
 
     let mut cmake_args: Vec<String> = vec![
         "-S".into(),
@@ -54,31 +123,60 @@ fn install_llvm() {
             .into_owned(),
         "-G".into(),
         "Ninja".into(),
-        "-UBUILTINS_x86_64-unknown-seele_CMAKE_C_FLAGS".into(),
-        "-UBUILTINS_x86_64-unknown-seele_CMAKE_ASM_FLAGS".into(),
+        format!("-UBUILTINS_{llvm_target}_CMAKE_C_FLAGS"),
+        format!("-UBUILTINS_{llvm_target}_CMAKE_ASM_FLAGS"),
         "-DCMAKE_BUILD_TYPE=Release".into(),
         "-DLLVM_ENABLE_PROJECTS=clang;lld".into(),
-        "-DLLVM_ENABLE_RUNTIMES=compiler-rt".into(),
+        format!("-DLLVM_ENABLE_RUNTIMES={}", llvm_runtimes.join(";")),
         "-DLLVM_TARGETS_TO_BUILD=X86".into(),
-        "-DLLVM_BUILTIN_TARGETS=x86_64-unknown-seele".into(),
-        "-DBUILTINS_x86_64-unknown-seele_CMAKE_SYSTEM_NAME=Seele".into(),
+        format!("-DLLVM_BUILTIN_TARGETS={llvm_target}"),
+        format!("-DBUILTINS_{llvm_target}_CMAKE_SYSTEM_NAME=Seele"),
+        format!("-DBUILTINS_{llvm_target}_CMAKE_SYSROOT={}", sysroot.display()),
+        format!("-DBUILTINS_{llvm_target}_CMAKE_C_COMPILER_TARGET={llvm_target}"),
+        format!("-DBUILTINS_{llvm_target}_CMAKE_ASM_COMPILER_TARGET={llvm_target}"),
         format!(
-            "-DBUILTINS_x86_64-unknown-seele_CMAKE_SYSROOT={}",
-            sysroot.display()
-        ),
-        "-DBUILTINS_x86_64-unknown-seele_CMAKE_C_COMPILER_TARGET=x86_64-unknown-seele".into(),
-        "-DBUILTINS_x86_64-unknown-seele_CMAKE_ASM_COMPILER_TARGET=x86_64-unknown-seele".into(),
-        format!(
-            "-DBUILTINS_x86_64-unknown-seele_CMAKE_C_FLAGS=--sysroot={}",
+            "-DBUILTINS_{llvm_target}_CMAKE_C_FLAGS=--sysroot={}",
             sysroot.display()
         ),
         format!(
-            "-DBUILTINS_x86_64-unknown-seele_CMAKE_ASM_FLAGS=--sysroot={}",
+            "-DBUILTINS_{llvm_target}_CMAKE_ASM_FLAGS=--sysroot={}",
             sysroot.display()
         ),
-        "-DBUILTINS_x86_64-unknown-seele_COMPILER_RT_BUILD_CRT=OFF".into(),
+        format!("-DBUILTINS_{llvm_target}_COMPILER_RT_BUILD_CRT=OFF"),
         format!("-DCMAKE_INSTALL_PREFIX={}", prefix.display()),
     ];
+
+    if config.llvm_cxx {
+        cmake_args.extend([
+            format!("-DLLVM_RUNTIME_TARGETS={llvm_target}"),
+            format!("-DRUNTIMES_{llvm_target}_CMAKE_SYSTEM_NAME=Seele"),
+            format!("-DRUNTIMES_{llvm_target}_CMAKE_SYSROOT={}", sysroot.display()),
+            format!("-DRUNTIMES_{llvm_target}_CMAKE_C_COMPILER_TARGET={llvm_target}"),
+            format!("-DRUNTIMES_{llvm_target}_CMAKE_CXX_COMPILER_TARGET={llvm_target}"),
+            format!("-DRUNTIMES_{llvm_target}_CMAKE_ASM_COMPILER_TARGET={llvm_target}"),
+            format!(
+                "-DRUNTIMES_{llvm_target}_CMAKE_C_FLAGS=--sysroot={}",
+                sysroot.display()
+            ),
+            format!(
+                "-DRUNTIMES_{llvm_target}_CMAKE_CXX_FLAGS=--sysroot={}",
+                sysroot.display()
+            ),
+            format!(
+                "-DRUNTIMES_{llvm_target}_CMAKE_ASM_FLAGS=--sysroot={}",
+                sysroot.display()
+            ),
+            format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_USE_COMPILER_RT=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_USE_COMPILER_RT=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXX_USE_COMPILER_RT=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_USE_LLVM_UNWINDER=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXX_CXX_ABI=libcxxabi"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_SHARED=OFF"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_ENABLE_SHARED=OFF"),
+            format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_ENABLE_SHARED=OFF"),
+        ]);
+    }
+
     run_cmd_owned(&llvm_dir, "cmake", cmake_args.drain(..))
         .unwrap_or_else(|err| die(&format!("failed to configure LLVM: {err}")));
 
@@ -109,42 +207,7 @@ fn install_llvm() {
     println!("installed LLVM toolchain into {}", prefix.display());
 }
 
-fn install_rust() {
-    let mut args = env::args().skip(1);
-    let mut target = "x86_64-seele".to_string();
-    let mut toolchain = "seele".to_string();
-    let mut build_std = true;
-    let mut skip_build = false;
-    let mut force = false;
-    let mut stage2 = true;
-
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--target" => {
-                target = args
-                    .next()
-                    .unwrap_or_else(|| usage("--target requires a value"));
-            }
-            "--toolchain" => {
-                toolchain = args
-                    .next()
-                    .unwrap_or_else(|| usage("--toolchain requires a value"));
-            }
-            "--std" => build_std = true,
-            "--no-std" => build_std = false,
-            "--skip-build" => skip_build = true,
-            "--force" => force = true,
-            "--stage2" => stage2 = true,
-            "--no-stage2" => stage2 = false,
-            "--help" | "-h" => {
-                usage("");
-            }
-            other => {
-                usage(&format!("unknown argument: {other}"));
-            }
-        }
-    }
-
+fn install_rust(config: &Config) {
     let cwd = env::current_dir().expect("failed to read current dir");
     let rust_dir = cwd.join("rust-seele");
     if !rust_dir.is_dir() {
@@ -155,15 +218,18 @@ fn install_rust() {
         std::process::exit(1);
     }
 
-    if !force && toolchain_exists(&toolchain).unwrap_or(false) {
-        println!("toolchain '{toolchain}' already installed; skipping (use --force to rebuild)");
+    if !config.force && toolchain_exists(&config.toolchain).unwrap_or(false) {
+        println!(
+            "toolchain '{}' already installed; skipping (use --force to rebuild)",
+            config.toolchain
+        );
         return;
     }
 
-    if !skip_build {
+    if !config.skip_build {
         // 1) Build host compiler + host std (for build scripts / proc-macros).
         let mut host_args = vec!["build", "--warnings", "warn", "compiler/rustc"];
-        if stage2 {
+        if config.stage2 {
             host_args.insert(3, "--stage");
             host_args.insert(4, "2");
         }
@@ -174,13 +240,13 @@ fn install_rust() {
         // going to link via `rustup toolchain link`. This is needed so that build scripts
         // and proc-macros for host crates (e.g. when building relibc) can find `std` and
         // `core` for `x86_64-unknown-linux-gnu`.
-        if build_std {
+        if config.build_std {
             let host_std_args = vec![
                 "build",
                 "--warnings",
                 "warn",
                 "--stage",
-                if stage2 { "2" } else { "1" },
+                if config.stage2 { "2" } else { "1" },
                 "library/std",
             ];
             run_cmd(&rust_dir, "./x.py", &host_std_args)
@@ -188,21 +254,21 @@ fn install_rust() {
         }
 
         // 2) Build target std/core for the Seele target.
-        let mut target_args = vec!["build", "--target", &target, "library/core"];
-        if target == "x86_64-seele" {
+        let mut target_args = vec!["build", "--target", &config.target, "library/core"];
+        if config.target == "x86_64-seele" {
             target_args.insert(1, "--warnings");
             target_args.insert(2, "warn");
         }
-        if build_std {
+        if config.build_std {
             target_args.push("library/std");
         }
-        if stage2 {
+        if config.stage2 {
             target_args.insert(1, "--stage");
             target_args.insert(2, "2");
         }
 
         run_cmd(&rust_dir, "./x.py", &target_args)
-            .unwrap_or_else(|err| die(&format!("x.py build (target {target}) failed: {err}")));
+            .unwrap_or_else(|err| die(&format!("x.py build (target {}) failed: {err}", config.target)));
     }
 
     let host = rust_host_triple().unwrap_or_else(|err| die(&format!("failed to get host: {err}")));
@@ -210,7 +276,7 @@ fn install_rust() {
         rust_dir
             .join("build")
             .join(&host)
-            .join(if stage2 { "stage2" } else { "stage1" });
+            .join(if config.stage2 { "stage2" } else { "stage1" });
     if !stage_dir.is_dir() {
         die(&format!(
             "stage directory not found: {} (try --stage2)",
@@ -220,8 +286,8 @@ fn install_rust() {
 
     // For the default Seele target, make the toolchain self-contained by
     // copying the relibc CRT objects and libc into the target's rustlib dir.
-    if target == "x86_64-seele" {
-        if let Err(err) = install_seele_runtime(&cwd, &stage_dir, &target) {
+    if config.target == "x86_64-seele" {
+        if let Err(err) = install_seele_runtime(&cwd, &stage_dir, &config.target) {
             die(&format!("failed to install Seele runtime: {err}"));
         }
     }
@@ -229,12 +295,13 @@ fn install_rust() {
     run_cmd(
         &cwd,
         "rustup",
-        &["toolchain", "link", &toolchain, stage_dir.to_str().unwrap()],
+        &["toolchain", "link", &config.toolchain, stage_dir.to_str().unwrap()],
     )
     .unwrap_or_else(|err| die(&format!("rustup toolchain link failed: {err}")));
 
     println!(
-        "installed toolchain '{toolchain}' from {}",
+        "installed toolchain '{}' from {}",
+        config.toolchain,
         stage_dir.display()
     );
 }
@@ -244,7 +311,7 @@ fn usage(msg: &str) -> ! {
         eprintln!("error: {msg}");
     }
     eprintln!(
-        "usage: ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--no-stage2]"
+        "usage: ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--no-stage2] [--llvm-cxx]"
     );
     std::process::exit(2);
 }
