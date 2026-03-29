@@ -103,14 +103,15 @@ fn install_llvm(config: &Config) {
     fs::create_dir_all(&prefix)
         .unwrap_or_else(|err| die(&format!("failed to create {}: {err}", prefix.display())));
 
-    let mut llvm_runtimes = vec!["compiler-rt".to_string()];
-    if config.llvm_cxx {
-        llvm_runtimes.extend([
+    let llvm_runtimes = if config.llvm_cxx {
+        vec![
             "libunwind".to_string(),
             "libcxxabi".to_string(),
             "libcxx".to_string(),
-        ]);
-    }
+        ]
+    } else {
+        vec!["compiler-rt".to_string()]
+    };
 
     let mut cmake_args: Vec<String> = vec![
         "-S".into(),
@@ -149,11 +150,19 @@ fn install_llvm(config: &Config) {
     if config.llvm_cxx {
         cmake_args.extend([
             format!("-DLLVM_RUNTIME_TARGETS={llvm_target}"),
-            format!("-DRUNTIMES_{llvm_target}_CMAKE_SYSTEM_NAME=Seele"),
+            format!("-URUNTIMES_{llvm_target}_LIBCXX_ENABLE_LOCALIZATION"),
+            format!("-URUNTIMES_{llvm_target}_LIBCXX_ENABLE_THREADS"),
+            format!("-URUNTIMES_{llvm_target}_LIBCXX_ENABLE_FILESYSTEM"),
+            format!("-URUNTIMES_{llvm_target}_LIBCXXABI_ENABLE_THREADS"),
+            // CMake doesn't know about Seele as a platform yet; treat the
+            // runtime sub-build as a generic cross target and let clang's
+            // target triple drive the actual code generation.
+            format!("-DRUNTIMES_{llvm_target}_CMAKE_SYSTEM_NAME=Generic"),
             format!("-DRUNTIMES_{llvm_target}_CMAKE_SYSROOT={}", sysroot.display()),
             format!("-DRUNTIMES_{llvm_target}_CMAKE_C_COMPILER_TARGET={llvm_target}"),
             format!("-DRUNTIMES_{llvm_target}_CMAKE_CXX_COMPILER_TARGET={llvm_target}"),
             format!("-DRUNTIMES_{llvm_target}_CMAKE_ASM_COMPILER_TARGET={llvm_target}"),
+            format!("-DRUNTIMES_{llvm_target}_CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY"),
             format!(
                 "-DRUNTIMES_{llvm_target}_CMAKE_C_FLAGS=--sysroot={}",
                 sysroot.display()
@@ -167,13 +176,18 @@ fn install_llvm(config: &Config) {
                 sysroot.display()
             ),
             format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_USE_COMPILER_RT=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_IS_BAREMETAL=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_USE_COMPILER_RT=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_BAREMETAL=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_USE_COMPILER_RT=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_USE_LLVM_UNWINDER=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_CXX_ABI=libcxxabi"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_LOCALIZATION=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_SHARED=OFF"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_ENABLE_SHARED=OFF"),
             format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_ENABLE_SHARED=OFF"),
+            format!("-DRUNTIMES_{llvm_target}_LLVM_USES_LIBSTDCXX=OFF"),
+            format!("-DRUNTIMES_{llvm_target}_LLVM_DEFAULT_TO_GLIBCXX_USE_CXX11_ABI=OFF"),
         ]);
     }
 
@@ -203,6 +217,11 @@ fn install_llvm(config: &Config) {
 
     install_llvm_sysroot_link(&prefix, &sysroot)
         .unwrap_or_else(|err| die(&format!("failed to link LLVM sysroot: {err}")));
+
+    if config.llvm_cxx {
+        install_libcpp(&prefix, &sysroot, &llvm_target)
+            .unwrap_or_else(|err| die(&format!("failed to install libc++ into sysroot: {err}")));
+    }
 
     println!("installed LLVM toolchain into {}", prefix.display());
 }
@@ -355,6 +374,141 @@ fn install_llvm_sysroot_link(prefix: &Path, sysroot: &Path) -> Result<(), String
         return Err("creating the LLVM sysroot symlink is only implemented on unix".to_string());
     }
 
+    Ok(())
+}
+
+fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<(), String> {
+    let src_include = prefix.join("include").join("c++").join("v1");
+    if !src_include.is_dir() {
+        return Err(format!(
+            "libc++ headers not found at {}",
+            src_include.display()
+        ));
+    }
+
+    let dst_include = sysroot
+        .join("misc")
+        .join("libs")
+        .join("user_include")
+        .join("c++")
+        .join("v1");
+    run_cmd(
+        Path::new("/"),
+        "sudo",
+        [
+            "mkdir",
+            "-p",
+            dst_include
+                .parent()
+                .ok_or_else(|| format!("invalid libc++ include path {}", dst_include.display()))?
+                .to_str()
+                .ok_or_else(|| format!("non-utf8 path {}", dst_include.display()))?,
+        ],
+    )?;
+    run_cmd(
+        Path::new("/"),
+        "sudo",
+        [
+            "cp",
+            "-a",
+            src_include
+                .to_str()
+                .ok_or_else(|| format!("non-utf8 path {}", src_include.display()))?,
+            dst_include
+                .to_str()
+                .ok_or_else(|| format!("non-utf8 path {}", dst_include.display()))?,
+        ],
+    )?;
+
+    let src_target_include = prefix
+        .join("include")
+        .join(llvm_target)
+        .join("c++")
+        .join("v1");
+    if !src_target_include.is_dir() {
+        return Err(format!(
+            "target-specific libc++ headers not found at {}",
+            src_target_include.display()
+        ));
+    }
+    let dst_target_include = sysroot
+        .join("misc")
+        .join("libs")
+        .join("user_include")
+        .join(llvm_target)
+        .join("c++")
+        .join("v1");
+    run_cmd(
+        Path::new("/"),
+        "sudo",
+        [
+            "mkdir",
+            "-p",
+            dst_target_include
+                .parent()
+                .ok_or_else(|| {
+                    format!(
+                        "invalid target libc++ include path {}",
+                        dst_target_include.display()
+                    )
+                })?
+                .to_str()
+                .ok_or_else(|| format!("non-utf8 path {}", dst_target_include.display()))?,
+        ],
+    )?;
+    run_cmd(
+        Path::new("/"),
+        "sudo",
+        [
+            "cp",
+            "-a",
+            src_target_include
+                .to_str()
+                .ok_or_else(|| format!("non-utf8 path {}", src_target_include.display()))?,
+            dst_target_include
+                .to_str()
+                .ok_or_else(|| format!("non-utf8 path {}", dst_target_include.display()))?,
+        ],
+    )?;
+
+    let src_lib_dir = prefix.join("lib").join(llvm_target);
+    let dst_lib_dir = sysroot.join("misc").join("libs").join("user_lib");
+    run_cmd(
+        Path::new("/"),
+        "sudo",
+        [
+            "mkdir",
+            "-p",
+            dst_lib_dir
+                .to_str()
+                .ok_or_else(|| format!("non-utf8 path {}", dst_lib_dir.display()))?,
+        ],
+    )?;
+
+    for name in ["libc++.a", "libc++abi.a", "libunwind.a"] {
+        let src = src_lib_dir.join(name);
+        if !src.is_file() {
+            return Err(format!("missing {} at {}", name, src.display()));
+        }
+        let dst = dst_lib_dir.join(name);
+        run_cmd(
+            Path::new("/"),
+            "sudo",
+            [
+                "cp",
+                "-f",
+                src.to_str()
+                    .ok_or_else(|| format!("non-utf8 path {}", src.display()))?,
+                dst.to_str()
+                    .ok_or_else(|| format!("non-utf8 path {}", dst.display()))?,
+            ],
+        )?;
+    }
+
+    println!(
+        "installed libc++ headers and libraries into {}",
+        sysroot.display()
+    );
     Ok(())
 }
 
