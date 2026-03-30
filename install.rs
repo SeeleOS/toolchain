@@ -237,15 +237,15 @@ fn install_rust(config: &Config) {
         std::process::exit(1);
     }
 
-    if !config.force && toolchain_exists(&config.toolchain).unwrap_or(false) {
+    let toolchain_already_exists = !config.force && toolchain_exists(&config.toolchain).unwrap_or(false);
+    if toolchain_already_exists {
         println!(
-            "toolchain '{}' already installed; skipping (use --force to rebuild)",
+            "toolchain '{}' already installed; skipping rebuild and refreshing linked tools",
             config.toolchain
         );
-        return;
     }
 
-    if !config.skip_build {
+    if !config.skip_build && !toolchain_already_exists {
         // 1) Build host compiler + host std (for build scripts / proc-macros).
         let mut host_args = vec!["build", "--warnings", "warn", "compiler/rustc"];
         if config.stage2 {
@@ -309,6 +309,14 @@ fn install_rust(config: &Config) {
         if let Err(err) = install_seele_runtime(&cwd, &stage_dir, &config.target) {
             die(&format!("failed to install Seele runtime: {err}"));
         }
+    }
+
+    let llvm_prefix = cwd
+        .parent()
+        .unwrap_or_else(|| die("cannot determine workspace root (toolchain has no parent)"))
+        .join(".llvm");
+    if let Err(err) = install_llvm_bin_tools(&llvm_prefix, &stage_dir, &["llvm-ar", "llvm-ranlib"]) {
+        die(&format!("failed to install LLVM bin tools into Rust toolchain: {err}"));
     }
 
     run_cmd(
@@ -578,6 +586,62 @@ fn install_seele_runtime(workdir: &Path, stage_dir: &Path, target: &str) -> Resu
     println!(
         "installed Seele runtime (CRT + libc) into {}",
         dst.display()
+    );
+    Ok(())
+}
+
+fn install_llvm_bin_tools(prefix: &Path, stage_dir: &Path, tools: &[&str]) -> Result<(), String> {
+    let llvm_bin = prefix.join("bin");
+    if !llvm_bin.is_dir() {
+        return Err(format!("LLVM bin dir not found: {}", llvm_bin.display()));
+    }
+
+    let stage_bin = stage_dir.join("bin");
+    if !stage_bin.is_dir() {
+        return Err(format!(
+            "Rust toolchain bin dir not found: {}",
+            stage_bin.display()
+        ));
+    }
+
+    for tool in tools {
+        let src = llvm_bin.join(tool);
+        if !src.is_file() {
+            return Err(format!("missing LLVM tool {} at {}", tool, src.display()));
+        }
+
+        let dst = stage_bin.join(tool);
+        if dst.exists() || dst.symlink_metadata().is_ok() {
+            fs::remove_file(&dst)
+                .map_err(|e| format!("failed to remove {}: {e}", dst.display()))?;
+        }
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&src, &dst).map_err(|e| {
+                format!(
+                    "failed to create symlink {} -> {}: {e}",
+                    dst.display(),
+                    src.display()
+                )
+            })?;
+        }
+
+        #[cfg(not(unix))]
+        {
+            fs::copy(&src, &dst).map_err(|e| {
+                format!(
+                    "failed to copy {} -> {}: {e}",
+                    src.display(),
+                    dst.display()
+                )
+            })?;
+        }
+    }
+
+    println!(
+        "installed LLVM bin tools into {}",
+        stage_bin.display()
     );
     Ok(())
 }
