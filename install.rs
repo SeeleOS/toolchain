@@ -19,6 +19,7 @@ use std::path::Path;
 use std::process::{Command, ExitStatus};
 
 fn main() {
+    ensure_sysroot_mounted();
     let config = Config::parse();
     install_llvm(&config);
     install_rust(&config);
@@ -681,6 +682,60 @@ fn install_llvm_bin_tools(prefix: &Path, stage_dir: &Path, tools: &[&str]) -> Re
 
     println!("installed LLVM bin tools into {}", stage_bin.display());
     Ok(())
+}
+
+fn ensure_sysroot_mounted() {
+    let cwd = env::current_dir().unwrap_or_else(|err| die(&format!("failed to read current dir: {err}")));
+    let root = cwd
+        .parent()
+        .unwrap_or_else(|| die("cannot determine workspace root (toolchain has no parent)"));
+    let sysroot = root.join("sysroot");
+    let disk_img = root.join("disk.img");
+
+    fs::create_dir_all(&sysroot)
+        .unwrap_or_else(|err| die(&format!("failed to create {}: {err}", sysroot.display())));
+
+    let mount_status = Command::new("mountpoint")
+        .arg("-q")
+        .arg(&sysroot)
+        .status()
+        .unwrap_or_else(|err| die(&format!("failed to run mountpoint: {err}")));
+
+    if mount_status.success() {
+        return;
+    }
+
+    if mount_status.code() != Some(1) {
+        die(&format!(
+            "mountpoint -q {} exited with status {}",
+            sysroot.display(),
+            mount_status
+        ));
+    }
+
+    if !disk_img.is_file() {
+        die(&format!(
+            "disk image not found: {} (create/mount it before installing the toolchain)",
+            disk_img.display()
+        ));
+    }
+
+    run_cmd(
+        root,
+        "sudo",
+        [
+            "mount",
+            "-o",
+            "loop",
+            disk_img
+                .to_str()
+                .unwrap_or_else(|| die(&format!("non-utf8 path {}", disk_img.display()))),
+            sysroot
+                .to_str()
+                .unwrap_or_else(|| die(&format!("non-utf8 path {}", sysroot.display()))),
+        ],
+    )
+    .unwrap_or_else(|err| die(&format!("failed to mount sysroot: {err}")));
 }
 
 fn run_cmd<I, S>(dir: &Path, program: &str, args: I) -> Result<ExitStatus, String>
