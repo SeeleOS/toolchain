@@ -315,9 +315,9 @@ fn install_rust(config: &Config) {
         ));
     }
 
-    sync_rustlib_from_dist_deps(&rust_dir, &host, &stage_dir, &host)
+    sync_rustlib(&rust_dir, &host, &stage_dir, &host)
         .unwrap_or_else(|err| die(&format!("failed to install host rustlib: {err}")));
-    sync_rustlib_from_dist_deps(&rust_dir, &host, &stage_dir, &config.target)
+    sync_rustlib(&rust_dir, &host, &stage_dir, &config.target)
         .unwrap_or_else(|err| die(&format!("failed to install target rustlib: {err}")));
 
     // For the default Seele target, make the toolchain self-contained by
@@ -640,31 +640,41 @@ fn install_symlink(target: &str, link_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn sync_rustlib_from_dist_deps(
+fn sync_rustlib(
     rust_dir: &Path,
     build_host: &str,
     stage_dir: &Path,
     triple: &str,
 ) -> Result<(), String> {
-    let src = rust_dir
-        .join("build")
-        .join(build_host)
-        .join("stage1-std")
-        .join(triple)
-        .join("dist")
-        .join("deps");
-    if !src.is_dir() {
-        return Err(format!(
-            "rustlib dist dir not found: {} (did x.py build library/std for {triple}?)",
-            src.display()
-        ));
-    }
+    let build_dir = rust_dir.join("build").join(build_host);
+    let candidates = [
+        build_dir
+            .join("stage1-std")
+            .join(triple)
+            .join("dist")
+            .join("deps"),
+        build_dir.join("stage1").join("lib").join("rustlib").join(triple).join("lib"),
+        build_dir.join("stage2").join("lib").join("rustlib").join(triple).join("lib"),
+    ];
+    let src = candidates
+        .iter()
+        .find(|path| path.is_dir())
+        .ok_or_else(|| {
+            let tried = candidates
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("no rustlib source dir found for {triple}; tried: {tried}")
+        })?;
 
     let dst = stage_dir.join("lib").join("rustlib").join(triple).join("lib");
     fs::create_dir_all(&dst).map_err(|e| format!("failed to create {}: {e}", dst.display()))?;
 
-    for entry in fs::read_dir(&src)
-        .map_err(|e| format!("failed to read rustlib dist dir {}: {e}", src.display()))?
+    ensure_rustlib_is_nonempty(src, triple)?;
+
+    for entry in fs::read_dir(src)
+        .map_err(|e| format!("failed to read rustlib dir {}: {e}", src.display()))?
     {
         let entry =
             entry.map_err(|e| format!("failed to read entry in {}: {e}", src.display()))?;
@@ -684,6 +694,55 @@ fn sync_rustlib_from_dist_deps(
     }
 
     println!("installed rustlib for {triple} into {}", dst.display());
+    Ok(())
+}
+
+fn ensure_rustlib_is_nonempty(src: &Path, triple: &str) -> Result<(), String> {
+    let required_prefixes = if triple.contains("seele") {
+        ["libcore-", "libcompiler_builtins-", "liballoc-", "libstd-"].as_slice()
+    } else {
+        ["libcore-", "liballoc-", "libstd-"].as_slice()
+    };
+
+    for prefix in required_prefixes {
+        let mut matched = false;
+        for entry in fs::read_dir(src)
+            .map_err(|e| format!("failed to read rustlib dir {}: {e}", src.display()))?
+        {
+            let entry =
+                entry.map_err(|e| format!("failed to read entry in {}: {e}", src.display()))?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if !name.starts_with(prefix) || !name.ends_with(".rlib") {
+                continue;
+            }
+
+            matched = true;
+            let len = fs::metadata(&path)
+                .map_err(|e| format!("failed to stat {}: {e}", path.display()))?
+                .len();
+            if len == 0 {
+                return Err(format!(
+                    "rustlib source {} is empty; rebuild the {triple} standard library first",
+                    path.display()
+                ));
+            }
+        }
+
+        if !matched {
+            return Err(format!(
+                "rustlib source {} is missing {}*.rlib for {triple}",
+                src.display(),
+                prefix
+            ));
+        }
+    }
+
     Ok(())
 }
 
