@@ -132,7 +132,10 @@ fn install_llvm(config: &Config) {
         "-DLLVM_TARGETS_TO_BUILD=X86".into(),
         format!("-DLLVM_BUILTIN_TARGETS={llvm_target}"),
         format!("-DBUILTINS_{llvm_target}_CMAKE_SYSTEM_NAME=Seele"),
-        format!("-DBUILTINS_{llvm_target}_CMAKE_SYSROOT={}", sysroot.display()),
+        format!(
+            "-DBUILTINS_{llvm_target}_CMAKE_SYSROOT={}",
+            sysroot.display()
+        ),
         format!("-DBUILTINS_{llvm_target}_CMAKE_C_COMPILER_TARGET={llvm_target}"),
         format!("-DBUILTINS_{llvm_target}_CMAKE_ASM_COMPILER_TARGET={llvm_target}"),
         format!(
@@ -158,7 +161,10 @@ fn install_llvm(config: &Config) {
             // runtime sub-build as a generic cross target and let clang's
             // target triple drive the actual code generation.
             format!("-DRUNTIMES_{llvm_target}_CMAKE_SYSTEM_NAME=Generic"),
-            format!("-DRUNTIMES_{llvm_target}_CMAKE_SYSROOT={}", sysroot.display()),
+            format!(
+                "-DRUNTIMES_{llvm_target}_CMAKE_SYSROOT={}",
+                sysroot.display()
+            ),
             format!("-DRUNTIMES_{llvm_target}_CMAKE_C_COMPILER_TARGET={llvm_target}"),
             format!("-DRUNTIMES_{llvm_target}_CMAKE_CXX_COMPILER_TARGET={llvm_target}"),
             format!("-DRUNTIMES_{llvm_target}_CMAKE_ASM_COMPILER_TARGET={llvm_target}"),
@@ -237,7 +243,8 @@ fn install_rust(config: &Config) {
         std::process::exit(1);
     }
 
-    let toolchain_already_exists = !config.force && toolchain_exists(&config.toolchain).unwrap_or(false);
+    let toolchain_already_exists =
+        !config.force && toolchain_exists(&config.toolchain).unwrap_or(false);
     if toolchain_already_exists {
         println!(
             "toolchain '{}' already installed; skipping rebuild and refreshing linked tools",
@@ -286,8 +293,12 @@ fn install_rust(config: &Config) {
             target_args.insert(2, "2");
         }
 
-        run_cmd(&rust_dir, "./x.py", &target_args)
-            .unwrap_or_else(|err| die(&format!("x.py build (target {}) failed: {err}", config.target)));
+        run_cmd(&rust_dir, "./x.py", &target_args).unwrap_or_else(|err| {
+            die(&format!(
+                "x.py build (target {}) failed: {err}",
+                config.target
+            ))
+        });
     }
 
     let host = rust_host_triple().unwrap_or_else(|err| die(&format!("failed to get host: {err}")));
@@ -315,14 +326,22 @@ fn install_rust(config: &Config) {
         .parent()
         .unwrap_or_else(|| die("cannot determine workspace root (toolchain has no parent)"))
         .join(".llvm");
-    if let Err(err) = install_llvm_bin_tools(&llvm_prefix, &stage_dir, &["llvm-ar", "llvm-ranlib"]) {
-        die(&format!("failed to install LLVM bin tools into Rust toolchain: {err}"));
+    if let Err(err) = install_llvm_bin_tools(&llvm_prefix, &stage_dir, &["llvm-ar", "llvm-ranlib"])
+    {
+        die(&format!(
+            "failed to install LLVM bin tools into Rust toolchain: {err}"
+        ));
     }
 
     run_cmd(
         &cwd,
         "rustup",
-        &["toolchain", "link", &config.toolchain, stage_dir.to_str().unwrap()],
+        &[
+            "toolchain",
+            "link",
+            &config.toolchain,
+            stage_dir.to_str().unwrap(),
+        ],
     )
     .unwrap_or_else(|err| die(&format!("rustup toolchain link failed: {err}")));
 
@@ -394,11 +413,7 @@ fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<()
         ));
     }
 
-    let dst_include = sysroot
-        .join("libs")
-        .join("include")
-        .join("c++")
-        .join("v1");
+    let dst_include = sysroot.join("libs").join("include").join("c++").join("v1");
     run_cmd(
         Path::new("/"),
         "sudo",
@@ -556,9 +571,9 @@ fn install_seele_runtime(workdir: &Path, stage_dir: &Path, target: &str) -> Resu
         "crt0.o",
         "crti.o",
         "crtn.o",
-        "libc.a",
         "libm.a",
         "librt.a",
+        "libc.so",
         "libpthread.a",
     ];
 
@@ -581,10 +596,41 @@ fn install_seele_runtime(workdir: &Path, stage_dir: &Path, target: &str) -> Resu
         })?;
     }
 
+    install_symlink("libc.so", &dst.join("libc.so.6"))?;
+
     println!(
-        "installed Seele runtime (CRT + libc) into {}",
+        "installed Seele runtime (CRT + static/shared libc) into {}",
         dst.display()
     );
+    Ok(())
+}
+
+fn install_symlink(target: &str, link_path: &Path) -> Result<(), String> {
+    if link_path.exists() || link_path.symlink_metadata().is_ok() {
+        fs::remove_file(link_path)
+            .map_err(|e| format!("failed to remove {}: {e}", link_path.display()))?;
+    }
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link_path).map_err(|e| {
+            format!(
+                "failed to create symlink {} -> {}: {e}",
+                link_path.display(),
+                target
+            )
+        })?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        return Err(format!(
+            "creating symlink {} -> {} is only implemented on unix",
+            link_path.display(),
+            target
+        ));
+    }
+
     Ok(())
 }
 
@@ -628,19 +674,12 @@ fn install_llvm_bin_tools(prefix: &Path, stage_dir: &Path, tools: &[&str]) -> Re
         #[cfg(not(unix))]
         {
             fs::copy(&src, &dst).map_err(|e| {
-                format!(
-                    "failed to copy {} -> {}: {e}",
-                    src.display(),
-                    dst.display()
-                )
+                format!("failed to copy {} -> {}: {e}", src.display(), dst.display())
             })?;
         }
     }
 
-    println!(
-        "installed LLVM bin tools into {}",
-        stage_bin.display()
-    );
+    println!("installed LLVM bin tools into {}", stage_bin.display());
     Ok(())
 }
 
