@@ -315,6 +315,11 @@ fn install_rust(config: &Config) {
         ));
     }
 
+    sync_rustlib_from_dist_deps(&rust_dir, &host, &stage_dir, &host)
+        .unwrap_or_else(|err| die(&format!("failed to install host rustlib: {err}")));
+    sync_rustlib_from_dist_deps(&rust_dir, &host, &stage_dir, &config.target)
+        .unwrap_or_else(|err| die(&format!("failed to install target rustlib: {err}")));
+
     // For the default Seele target, make the toolchain self-contained by
     // copying the relibc CRT objects and libc into the target's rustlib dir.
     if config.target == "x86_64-seele" {
@@ -632,6 +637,53 @@ fn install_symlink(target: &str, link_path: &Path) -> Result<(), String> {
         ));
     }
 
+    Ok(())
+}
+
+fn sync_rustlib_from_dist_deps(
+    rust_dir: &Path,
+    build_host: &str,
+    stage_dir: &Path,
+    triple: &str,
+) -> Result<(), String> {
+    let src = rust_dir
+        .join("build")
+        .join(build_host)
+        .join("stage1-std")
+        .join(triple)
+        .join("dist")
+        .join("deps");
+    if !src.is_dir() {
+        return Err(format!(
+            "rustlib dist dir not found: {} (did x.py build library/std for {triple}?)",
+            src.display()
+        ));
+    }
+
+    let dst = stage_dir.join("lib").join("rustlib").join(triple).join("lib");
+    fs::create_dir_all(&dst).map_err(|e| format!("failed to create {}: {e}", dst.display()))?;
+
+    for entry in fs::read_dir(&src)
+        .map_err(|e| format!("failed to read rustlib dist dir {}: {e}", src.display()))?
+    {
+        let entry =
+            entry.map_err(|e| format!("failed to read entry in {}: {e}", src.display()))?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let dst_file = dst.join(entry.file_name());
+        fs::copy(&path, &dst_file).map_err(|e| {
+            format!(
+                "failed to copy {} -> {}: {e}",
+                path.display(),
+                dst_file.display()
+            )
+        })?;
+    }
+
+    println!("installed rustlib for {triple} into {}", dst.display());
     Ok(())
 }
 
