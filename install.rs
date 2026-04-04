@@ -395,9 +395,8 @@ fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<()
     }
 
     let dst_include = sysroot
-        .join("misc")
         .join("libs")
-        .join("user_include")
+        .join("include")
         .join("c++")
         .join("v1");
     run_cmd(
@@ -440,9 +439,8 @@ fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<()
         ));
     }
     let dst_target_include = sysroot
-        .join("misc")
         .join("libs")
-        .join("user_include")
+        .join("include")
         .join(llvm_target)
         .join("c++")
         .join("v1");
@@ -480,7 +478,7 @@ fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<()
     )?;
 
     let src_lib_dir = prefix.join("lib").join(llvm_target);
-    let dst_lib_dir = sysroot.join("misc").join("libs").join("user_lib");
+    let dst_lib_dir = sysroot.join("libs").join("lib_binaries");
     run_cmd(
         Path::new("/"),
         "sudo",
