@@ -2,12 +2,13 @@
 //! Install the Seele Rust toolchain from the local rust checkout.
 //!
 //! Usage:
-//!   ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--force] [--no-stage2] [--llvm-cxx]
+//!   ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--no-force] [--no-stage2] [--llvm-cxx]
 //!
 //! Defaults:
 //!   target:     x86_64-seele
 //!   toolchain:  seele
 //!   build:      compiler/rustc + library/core + library/std (stage2)
+//!   force:      enabled
 //!
 //! Notes:
 //! - Run this from the toolchain directory (where rust/ exists).
@@ -43,7 +44,7 @@ impl Config {
             toolchain: "seele".to_string(),
             build_std: true,
             skip_build: false,
-            force: false,
+            force: true,
             stage2: true,
             llvm_cxx: false,
         };
@@ -64,6 +65,7 @@ impl Config {
                 "--no-std" => config.build_std = false,
                 "--skip-build" => config.skip_build = true,
                 "--force" => config.force = true,
+                "--no-force" => config.force = false,
                 "--stage2" => config.stage2 = true,
                 "--no-stage2" => config.stage2 = false,
                 "--llvm-cxx" => config.llvm_cxx = true,
