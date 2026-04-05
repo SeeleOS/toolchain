@@ -546,13 +546,13 @@ fn install_seele_runtime(workdir: &Path, stage_dir: &Path, target: &str) -> Resu
         .ok_or_else(|| "cannot determine workspace root (toolchain has no parent)".to_string())?;
 
     let relibc_dir = root
-        .join("relibc-seele")
+        .join("relibc")
         .join("target")
         .join(target)
         .join("release");
     if !relibc_dir.is_dir() {
         return Err(format!(
-            "relibc runtime dir not found: {} (build relibc-seele for {target} first)",
+            "relibc runtime dir not found: {} (build relibc for {target} first)",
             relibc_dir.display()
         ));
     }
@@ -587,7 +587,7 @@ fn install_seele_runtime(workdir: &Path, stage_dir: &Path, target: &str) -> Resu
         let src = relibc_dir.join(name);
         if !src.is_file() {
             return Err(format!(
-                "missing {} in {} (relibc-seele not fully built for {target})",
+                "missing {} in {} (relibc not fully built for {target})",
                 name,
                 relibc_dir.display()
             ));
