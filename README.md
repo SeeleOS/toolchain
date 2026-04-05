@@ -3,7 +3,7 @@
 This repo holds the toolchain sources and scripts used to build Seele OS.
 
 ## Contents
-- `rust-seele/`: Rust toolchain source (submodule)
+- `rust/`: Rust toolchain source (submodule)
 - `install.rs`: rust-script installer for the local Rust toolchain
 
 ## Prerequisites
@@ -11,7 +11,7 @@ This repo holds the toolchain sources and scripts used to build Seele OS.
 You need a few tools installed before running the installer:
 
 - `rustup` (to manage installed toolchains)
-- A working host Rust toolchain (e.g. `nightly-x86_64-unknown-linux-gnu`) to build `rust-seele`
+- A working host Rust toolchain (e.g. `nightly-x86_64-unknown-linux-gnu`) to build `rust`
 - `rust-script` in `PATH` (used to run `install.rs`)
 
 On Nix systems, run everything from the project `nix develop` shell so that LLVM and `libstdc++` are available.

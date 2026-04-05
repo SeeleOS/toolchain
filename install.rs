@@ -1,5 +1,5 @@
 #!/usr/bin/env rust-script
-//! Install the Seele Rust toolchain from the local rust-seele checkout.
+//! Install the Seele Rust toolchain from the local rust checkout.
 //!
 //! Usage:
 //!   ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--force] [--no-stage2] [--llvm-cxx]
@@ -10,7 +10,7 @@
 //!   build:      compiler/rustc + library/core + library/std (stage2)
 //!
 //! Notes:
-//! - Run this from the toolchain directory (where rust-seele/ exists).
+//! - Run this from the toolchain directory (where rust/ exists).
 //! - Requires rustup and a Rust host toolchain.
 
 use std::env;
@@ -235,10 +235,10 @@ fn install_llvm(config: &Config) {
 
 fn install_rust(config: &Config) {
     let cwd = env::current_dir().expect("failed to read current dir");
-    let rust_dir = cwd.join("rust-seele");
+    let rust_dir = cwd.join("rust");
     if !rust_dir.is_dir() {
         eprintln!(
-            "error: rust-seele not found; run this from the toolchain dir (missing {})",
+            "error: rust not found; run this from the toolchain dir (missing {})",
             rust_dir.display()
         );
         std::process::exit(1);
