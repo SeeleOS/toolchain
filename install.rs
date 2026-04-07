@@ -283,13 +283,18 @@ fn install_rust(config: &Config) {
         }
 
         // 2) Build target std/core for the Seele target.
-        let mut target_args = vec!["build", "--target", &config.target, "library/core"];
+        // Let bootstrap drive the dependency graph itself. Building `library/std`
+        // already pulls in `core`, `alloc`, and `compiler_builtins`; passing both
+        // `library/core` and `library/std` can confuse custom-target builds.
+        let mut target_args = vec!["build", "--target", &config.target];
         if config.target == "x86_64-seele" {
             target_args.insert(1, "--warnings");
             target_args.insert(2, "warn");
         }
         if config.build_std {
             target_args.push("library/std");
+        } else {
+            target_args.push("library/core");
         }
         if config.stage2 {
             target_args.insert(1, "--stage");
