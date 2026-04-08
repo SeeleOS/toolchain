@@ -2,7 +2,7 @@
 //! Install the Seele Rust toolchain from the local rust checkout.
 //!
 //! Usage:
-//!   ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--no-force] [--no-stage2] [--llvm-cxx]
+//!   ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--no-force] [--no-stage2] [--no-llvm-cxx]
 //!
 //! Defaults:
 //!   target:     x86_64-seele
@@ -46,7 +46,7 @@ impl Config {
             skip_build: false,
             force: true,
             stage2: true,
-            llvm_cxx: false,
+            llvm_cxx: true,
         };
 
         while let Some(arg) = args.next() {
@@ -69,6 +69,7 @@ impl Config {
                 "--stage2" => config.stage2 = true,
                 "--no-stage2" => config.stage2 = false,
                 "--llvm-cxx" => config.llvm_cxx = true,
+                "--no-llvm-cxx" => config.llvm_cxx = false,
                 "--help" | "-h" => usage(""),
                 other => usage(&format!("unknown argument: {other}")),
             }
@@ -373,7 +374,7 @@ fn usage(msg: &str) -> ! {
         eprintln!("error: {msg}");
     }
     eprintln!(
-        "usage: ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--no-stage2] [--llvm-cxx]"
+        "usage: ./install.rs [--target <triple>] [--toolchain <name>] [--no-std] [--skip-build] [--no-stage2] [--no-llvm-cxx]"
     );
     std::process::exit(2);
 }
