@@ -192,6 +192,9 @@ fn install_llvm(config: &Config) {
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_USE_LLVM_UNWINDER=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_CXX_ABI=libcxxabi"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_LOCALIZATION=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXX_LINK_FLAGS=-Wl,-soname,libc++.so.1"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_LINK_FLAGS=-Wl,-soname,libc++abi.so.1"),
+            format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_LINK_FLAGS=-Wl,-soname,libunwind.so.1"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_SHARED=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_ENABLE_SHARED=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_ENABLE_SHARED=ON"),
@@ -551,6 +554,19 @@ fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<()
         ("libc++abi.so.1", "libc++abi.so"),
         ("libunwind.so.1", "libunwind.so"),
     ] {
+        let prefix_link = src_lib_dir.join(link);
+        #[cfg(unix)]
+        {
+            let _ = fs::remove_file(&prefix_link);
+            std::os::unix::fs::symlink(target, &prefix_link).map_err(|e| {
+                format!(
+                    "failed to create symlink {} -> {}: {e}",
+                    prefix_link.display(),
+                    target
+                )
+            })?;
+        }
+
         let dst = dst_lib_dir.join(link);
         run_cmd(
             Path::new("/"),
