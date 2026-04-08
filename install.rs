@@ -173,11 +173,11 @@ fn install_llvm(config: &Config) {
             format!("-DRUNTIMES_{llvm_target}_CMAKE_ASM_COMPILER_TARGET={llvm_target}"),
             format!("-DRUNTIMES_{llvm_target}_CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY"),
             format!(
-                "-DRUNTIMES_{llvm_target}_CMAKE_C_FLAGS=--sysroot={}",
+                "-DRUNTIMES_{llvm_target}_CMAKE_C_FLAGS=--sysroot={} -D_LIBCPP_PROVIDES_DEFAULT_RUNE_TABLE",
                 sysroot.display()
             ),
             format!(
-                "-DRUNTIMES_{llvm_target}_CMAKE_CXX_FLAGS=--sysroot={}",
+                "-DRUNTIMES_{llvm_target}_CMAKE_CXX_FLAGS=--sysroot={} -D_LIBCPP_PROVIDES_DEFAULT_RUNE_TABLE",
                 sysroot.display()
             ),
             format!(
@@ -192,9 +192,9 @@ fn install_llvm(config: &Config) {
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_USE_LLVM_UNWINDER=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_CXX_ABI=libcxxabi"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_LOCALIZATION=ON"),
-            format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_SHARED=OFF"),
-            format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_ENABLE_SHARED=OFF"),
-            format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_ENABLE_SHARED=OFF"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_SHARED=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_ENABLE_SHARED=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_ENABLE_SHARED=ON"),
             format!("-DRUNTIMES_{llvm_target}_LLVM_USES_LIBSTDCXX=OFF"),
             format!("-DRUNTIMES_{llvm_target}_LLVM_DEFAULT_TO_GLIBCXX_USE_CXX11_ABI=OFF"),
         ]);
@@ -519,7 +519,14 @@ fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<()
         ],
     )?;
 
-    for name in ["libc++.a", "libc++abi.a", "libunwind.a"] {
+    for name in [
+        "libc++.a",
+        "libc++abi.a",
+        "libunwind.a",
+        "libc++.so",
+        "libc++abi.so",
+        "libunwind.so",
+    ] {
         let src = src_lib_dir.join(name);
         if !src.is_file() {
             return Err(format!("missing {} at {}", name, src.display()));
@@ -533,6 +540,25 @@ fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<()
                 "-f",
                 src.to_str()
                     .ok_or_else(|| format!("non-utf8 path {}", src.display()))?,
+                dst.to_str()
+                    .ok_or_else(|| format!("non-utf8 path {}", dst.display()))?,
+            ],
+        )?;
+    }
+
+    for (link, target) in [
+        ("libc++.so.1", "libc++.so"),
+        ("libc++abi.so.1", "libc++abi.so"),
+        ("libunwind.so.1", "libunwind.so"),
+    ] {
+        let dst = dst_lib_dir.join(link);
+        run_cmd(
+            Path::new("/"),
+            "sudo",
+            [
+                "ln",
+                "-sfn",
+                target,
                 dst.to_str()
                     .ok_or_else(|| format!("non-utf8 path {}", dst.display()))?,
             ],
