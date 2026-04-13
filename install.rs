@@ -158,9 +158,7 @@ fn install_llvm(config: &Config) {
         cmake_args.extend([
             format!("-DLLVM_RUNTIME_TARGETS={llvm_target}"),
             format!("-URUNTIMES_{llvm_target}_LIBCXX_ENABLE_LOCALIZATION"),
-            format!("-URUNTIMES_{llvm_target}_LIBCXX_ENABLE_THREADS"),
             format!("-URUNTIMES_{llvm_target}_LIBCXX_ENABLE_FILESYSTEM"),
-            format!("-URUNTIMES_{llvm_target}_LIBCXXABI_ENABLE_THREADS"),
             // CMake doesn't know about Seele as a platform yet; treat the
             // runtime sub-build as a generic cross target and let clang's
             // target triple drive the actual code generation.
@@ -189,10 +187,14 @@ fn install_llvm(config: &Config) {
             format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_IS_BAREMETAL=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_USE_COMPILER_RT=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_BAREMETAL=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_ENABLE_THREADS=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_HAS_PTHREAD_API=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_USE_COMPILER_RT=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_USE_LLVM_UNWINDER=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_CXX_ABI=libcxxabi"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_LOCALIZATION=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_THREADS=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXX_HAS_PTHREAD_API=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_LINK_FLAGS=-Wl,-soname,libc++.so.1"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_LINK_FLAGS=-Wl,-soname,libc++abi.so.1"),
             format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_LINK_FLAGS=-Wl,-soname,libunwind.so.1"),
