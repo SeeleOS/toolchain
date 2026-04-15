@@ -103,6 +103,8 @@ fn install_llvm(config: &Config) {
     let sysroot = root.join("sysroot");
     let build_dir = llvm_dir.join("build-seele");
     let llvm_target = config.llvm_target();
+    let cmake_modules = cwd.join("cmake");
+    let cmake_toolchain = cwd.join("cmake").join("seele-toolchain.cmake");
 
     fs::create_dir_all(&prefix)
         .unwrap_or_else(|err| die(&format!("failed to create {}: {err}", prefix.display())));
@@ -135,6 +137,14 @@ fn install_llvm(config: &Config) {
         format!("-DLLVM_ENABLE_RUNTIMES={}", llvm_runtimes.join(";")),
         "-DLLVM_TARGETS_TO_BUILD=X86".into(),
         format!("-DLLVM_BUILTIN_TARGETS={llvm_target}"),
+        format!(
+            "-DBUILTINS_{llvm_target}_CMAKE_MODULE_PATH={}",
+            cmake_modules.display()
+        ),
+        format!(
+            "-DBUILTINS_{llvm_target}_CMAKE_TOOLCHAIN_FILE={}",
+            cmake_toolchain.display()
+        ),
         format!("-DBUILTINS_{llvm_target}_CMAKE_SYSTEM_NAME=Seele"),
         format!(
             "-DBUILTINS_{llvm_target}_CMAKE_SYSROOT={}",
@@ -159,10 +169,15 @@ fn install_llvm(config: &Config) {
             format!("-DLLVM_RUNTIME_TARGETS={llvm_target}"),
             format!("-URUNTIMES_{llvm_target}_LIBCXX_ENABLE_LOCALIZATION"),
             format!("-URUNTIMES_{llvm_target}_LIBCXX_ENABLE_FILESYSTEM"),
-            // CMake doesn't know about Seele as a platform yet; treat the
-            // runtime sub-build as a generic cross target and let clang's
-            // target triple drive the actual code generation.
-            format!("-DRUNTIMES_{llvm_target}_CMAKE_SYSTEM_NAME=Generic"),
+            format!(
+                "-DRUNTIMES_{llvm_target}_CMAKE_MODULE_PATH={}",
+                cmake_modules.display()
+            ),
+            format!(
+                "-DRUNTIMES_{llvm_target}_CMAKE_TOOLCHAIN_FILE={}",
+                cmake_toolchain.display()
+            ),
+            format!("-DRUNTIMES_{llvm_target}_CMAKE_SYSTEM_NAME=Seele"),
             format!(
                 "-DRUNTIMES_{llvm_target}_CMAKE_SYSROOT={}",
                 sysroot.display()
@@ -171,6 +186,7 @@ fn install_llvm(config: &Config) {
             format!("-DRUNTIMES_{llvm_target}_CMAKE_CXX_COMPILER_TARGET={llvm_target}"),
             format!("-DRUNTIMES_{llvm_target}_CMAKE_ASM_COMPILER_TARGET={llvm_target}"),
             format!("-DRUNTIMES_{llvm_target}_CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY"),
+            format!("-DRUNTIMES_{llvm_target}_CMAKE_PLATFORM_NO_VERSIONED_SONAME=OFF"),
             format!(
                 "-DRUNTIMES_{llvm_target}_CMAKE_C_FLAGS=--sysroot={} -D_LIBCPP_PROVIDES_DEFAULT_RUNE_TABLE",
                 sysroot.display()
@@ -196,9 +212,6 @@ fn install_llvm(config: &Config) {
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_FILESYSTEM=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_THREADS=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_HAS_PTHREAD_API=ON"),
-            format!("-DRUNTIMES_{llvm_target}_LIBCXX_LINK_FLAGS=-Wl,-soname,libc++.so.1"),
-            format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_LINK_FLAGS=-Wl,-soname,libc++abi.so.1"),
-            format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_LINK_FLAGS=-Wl,-soname,libunwind.so.1"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_SHARED=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_ENABLE_SHARED=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBUNWIND_ENABLE_SHARED=ON"),
