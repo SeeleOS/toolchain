@@ -868,7 +868,7 @@ fn ensure_sysroot_mounted() {
         return;
     }
 
-    if mount_status.code() != Some(1) {
+    if !matches!(mount_status.code(), Some(1 | 32)) {
         die(&format!(
             "mountpoint -q {} exited with status {}",
             sysroot.display(),
