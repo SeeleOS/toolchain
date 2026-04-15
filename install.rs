@@ -193,6 +193,7 @@ fn install_llvm(config: &Config) {
             format!("-DRUNTIMES_{llvm_target}_LIBCXXABI_USE_LLVM_UNWINDER=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_CXX_ABI=libcxxabi"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_LOCALIZATION=ON"),
+            format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_FILESYSTEM=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_ENABLE_THREADS=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_HAS_PTHREAD_API=ON"),
             format!("-DRUNTIMES_{llvm_target}_LIBCXX_LINK_FLAGS=-Wl,-soname,libc++.so.1"),
