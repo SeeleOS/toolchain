@@ -433,6 +433,7 @@ fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<()
     }
 
     let dst_include = sysroot.join("libs").join("include").join("c++").join("v1");
+    remove_installed_path(&dst_include)?;
     run_cmd(
         Path::new("/"),
         "sudo",
@@ -478,6 +479,7 @@ fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<()
         .join(llvm_target)
         .join("c++")
         .join("v1");
+    remove_installed_path(&dst_target_include)?;
     run_cmd(
         Path::new("/"),
         "sudo",
@@ -588,6 +590,25 @@ fn install_libcpp(prefix: &Path, sysroot: &Path, llvm_target: &str) -> Result<()
         "installed libc++ headers and libraries into {}",
         sysroot.display()
     );
+    Ok(())
+}
+
+fn remove_installed_path(path: &Path) -> Result<(), String> {
+    if !path.exists() && path.symlink_metadata().is_err() {
+        return Ok(());
+    }
+
+    run_cmd(
+        Path::new("/"),
+        "sudo",
+        [
+            "rm",
+            "-rf",
+            path.to_str()
+                .ok_or_else(|| format!("non-utf8 path {}", path.display()))?,
+        ],
+    )?;
+
     Ok(())
 }
 
